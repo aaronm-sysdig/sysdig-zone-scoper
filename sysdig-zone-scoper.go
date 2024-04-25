@@ -2,15 +2,15 @@ package main
 
 import (
 	"fmt"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/config"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/dataManipulation"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/mdsNamespaces"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/sysdighttp"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/zonePayload"
 	"github.com/sirupsen/logrus"
 	"os"
 	"runtime"
 	"strings"
-	"sysdig-zone-scoper/config"
-	"sysdig-zone-scoper/dataManipulation"
-	"sysdig-zone-scoper/mdsNamespaces"
-	"sysdig-zone-scoper/sysdighttp"
-	"sysdig-zone-scoper/zonePayload"
 )
 
 type customFormatter struct {

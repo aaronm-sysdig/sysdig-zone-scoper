@@ -1,9 +1,9 @@
 package dataManipulation
 
 import (
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/mdsNamespaces"
 	"github.com/sirupsen/logrus"
 	"strings"
-	"sysdig-zone-scoper/mdsNamespaces"
 )
 
 func Manipulate(logger *logrus.Logger, mdsNs *mdsNamespaces.NamespacePayload) error {

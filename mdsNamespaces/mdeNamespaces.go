@@ -1,10 +1,10 @@
 package mdsNamespaces
 
 import (
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/sysdighttp"
 	"github.com/sirupsen/logrus"
 	"io"
 	"net/http"
-	"sysdig-zone-scoper/sysdighttp"
 )
 
 type NamespacePayload struct {

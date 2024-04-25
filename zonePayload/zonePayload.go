@@ -2,10 +2,10 @@ package zonePayload
 
 import (
 	"fmt"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/sysdighttp"
 	"github.com/sirupsen/logrus"
 	"io"
 	"net/http"
-	"sysdig-zone-scoper/sysdighttp"
 )
 
 // ZonePayload now maps directly to a map with zone names as keys
