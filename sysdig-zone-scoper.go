@@ -105,15 +105,15 @@ func updateZone(appConfig *config.Configuration,
 			newScope = append(newScope, scpe)
 		}
 	}
-	//Add in our kubernetes scopes
+	// Add in our kubernetes scopes
 	newScope = append(newScope, zonePayload.Scope{
 		Rules:      fmt.Sprintf("clusterId in (%s)", joinedClusters),
 		TargetType: "kubernetes",
-	})
-	newScope = append(newScope, zonePayload.Scope{
+	}, zonePayload.Scope{
 		Rules:      fmt.Sprintf("namespace in (%s)", joinedNamespaces),
 		TargetType: "kubernetes",
 	})
+
 	//Update Zone
 	var updateZone = &zonePayload.UpdateZone{
 		ID:     createdZone.ID,
@@ -123,10 +123,17 @@ func updateZone(appConfig *config.Configuration,
 	configUpdate := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
 	configUpdate.JSON = updateZone
 	logger.Debugf("Updating zone '%s', zoneID %d", productName, createdZone.ID)
-	logger.Debugf(" Cluster: '%s', Namespace: '%s'", updateZone.Scopes[0].Rules, updateZone.Scopes[1].Rules)
+	logger.Debugf(" Cluster: '%s', Namespace: '%s'", updateZone.Scopes[len(updateZone.Scopes)-2].Rules, updateZone.Scopes[len(updateZone.Scopes)-1].Rules)
 	if err = zones.UpdateZone(logger, &configUpdate, updateZone); err != nil {
 		logger.Errorf("Could not update zoneId '%d' for '%s'", createdZone.ID, productName)
 	}
+	// Retrieve, modify, and set the Zone to mark it as kept
+	zone := zones.Zones[productName]
+	zone.Keep = true
+	zones.Zones[productName] = zone
+
+	logger.Debugf("Zone '%s' updated and marked as kept", productName)
+
 	return
 }
 
@@ -222,7 +229,9 @@ func main() {
 	writer.Flush()
 
 	//Process Dry run input
-	processDryRun()
+	if !appConfig.Silent {
+		processDryRun()
+	}
 
 	//Iterate through zones, if it does not already exist, we will create a blank one (update later all at once)
 	for productName := range distinctProducts {
@@ -248,5 +257,18 @@ func main() {
 		}
 	}
 
+	fmt.Println("")
+	//Setting static zones to keep
+	for key := range appConfig.StaticZones {
+		zone := zones.Zones[key]
+		zone.Keep = true
+		zones.Zones[key] = zone
+	}
+	//Now we sync/cleanup our zones, deleting any that we have not decided to keep
+	for key, zone := range zones.Zones {
+		if !zone.Keep {
+			logger.Infof("Zone '%s' not marked to keep. Deleting...", key)
+		}
+	}
 	logger.Print("Finished...")
 }

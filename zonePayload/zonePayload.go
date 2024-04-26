@@ -27,6 +27,7 @@ type Zone struct {
 	LastUpdated    int64   `json:"lastUpdated"`
 	Name           string  `json:"name"`
 	Scopes         []Scope `json:"scopes"`
+	Keep           bool
 }
 
 type CreateZone struct {
