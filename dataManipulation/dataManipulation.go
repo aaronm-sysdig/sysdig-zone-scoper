@@ -19,16 +19,18 @@ func Manipulate(logger *logrus.Logger, mdsNs *mdsNamespaces.NamespacePayload) er
 			}
 		}
 
-		if supportGroup, exists := entity.Labels["kubernetes.namespace.label.SupportGroup"]; exists && supportGroup == "" {
-			entity.Labels["kubernetes.namespace.label.SupportGroup"] = "KubeOperations"
-			logger.Debug("SupportGroup is empty, replacing with 'KubeOperations")
-		}
+		/*
+			if supportGroup, exists := entity.Labels["kubernetes.namespace.label.SupportGroup"]; exists && supportGroup == "" {
+				entity.Labels["kubernetes.namespace.label.SupportGroup"] = "KubeOperations"
+				logger.Debug("SupportGroup is empty, replacing with 'KubeOperations")
+			}
 
-		productName, exists := entity.Labels["kubernetes.namespace.label.ProductName"]
-		if exists && productName == "" {
-			entity.Labels["kubernetes.namespace.label.ProductName"] = "KubeOperations"
-			logger.Debug("ProductName is empty, replacing with 'KubeOperations")
-		}
+			productName, exists := entity.Labels["kubernetes.namespace.label.ProductName"]
+			if exists && productName == "" {
+				entity.Labels["kubernetes.namespace.label.ProductName"] = "KubeOperations"
+				logger.Debug("ProductName is empty, replacing with 'KubeOperations")
+			}
+		*/
 	}
 	return nil
 }

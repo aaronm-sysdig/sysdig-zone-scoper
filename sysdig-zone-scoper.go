@@ -98,19 +98,27 @@ func updateZone(appConfig *config.Configuration,
 	logger.Debugf("Joined cluster string: '%s'", joinedClusters)
 	logger.Debugf("Joined namespace string: '%s'", joinedNamespaces)
 
+	// Create a new scope without kubernetes
+	var newScope []zonePayload.Scope
+	for _, scpe := range createdZone.Scopes {
+		if scpe.TargetType != "kubernetes" {
+			newScope = append(newScope, scpe)
+		}
+	}
+	//Add in our kubernetes scopes
+	newScope = append(newScope, zonePayload.Scope{
+		Rules:      fmt.Sprintf("clusterId in (%s)", joinedClusters),
+		TargetType: "kubernetes",
+	})
+	newScope = append(newScope, zonePayload.Scope{
+		Rules:      fmt.Sprintf("namespace in (%s)", joinedNamespaces),
+		TargetType: "kubernetes",
+	})
 	//Update Zone
 	var updateZone = &zonePayload.UpdateZone{
-		ID:   createdZone.ID,
-		Name: createdZone.Name,
-		Scopes: []zonePayload.Scope{{
-			Rules:      fmt.Sprintf("clusterId in (%s)", joinedClusters),
-			TargetType: "kubernetes",
-		},
-			{
-				Rules:      fmt.Sprintf("namespace in (%s)", joinedNamespaces),
-				TargetType: "kubernetes",
-			},
-		},
+		ID:     createdZone.ID,
+		Name:   createdZone.Name,
+		Scopes: newScope,
 	}
 	configUpdate := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
 	configUpdate.JSON = updateZone
