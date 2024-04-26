@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/config"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/dataManipulation"
@@ -121,6 +122,40 @@ func updateZone(appConfig *config.Configuration,
 	return
 }
 
+func createClusterNSString(distinctProductNames map[string][]mdsNamespaces.ClusterNamespace, productName string) (joinedClusters string, joinedNamespaces string) {
+	var clusters []string
+	var namespaces []string
+	//Generate the comma lists of clusters and namespaces
+	for _, cn := range distinctProductNames[productName] {
+		clusters = append(clusters, cn.Cluster)
+		namespaces = append(namespaces, cn.Namespace)
+	}
+	return fmt.Sprintf(strings.Join(clusters, ",")), fmt.Sprintf(strings.Join(namespaces, ","))
+}
+
+func processDryRun() {
+	// Inform the user that the file has been written
+	fmt.Println("\"dry-run.csv\" has been written. Do you wish to continue? [Y/N]")
+
+	// Function to read user input
+	var response string
+	fmt.Scanln(&response)
+
+	if strings.TrimSpace(strings.ToUpper(response)) == "Y" {
+		fmt.Println("Are you SURE? [Y/N]")
+		fmt.Scanln(&response)
+		if strings.TrimSpace(strings.ToUpper(response)) == "Y" {
+			// User confirmed twice, continue the program
+			fmt.Println("Continuing...")
+		} else {
+			fmt.Println("Exiting...")
+			os.Exit(0)
+		}
+	} else {
+		os.Exit(0)
+	}
+}
+
 func main() {
 	var err error
 	logger := logrus.New()
@@ -156,6 +191,30 @@ func main() {
 	// Custom data manipulation
 	_ = dataManipulation.Manipulate(logger, mdsNs)
 	distinctProducts := mdsNs.DistinctClusterNamespaceByLabel(logger, appConfig.GroupingLabel)
+
+	// Create a dry run data of sorts to output to CSV to confirm before running
+	file, err := os.Create("dry-run.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+	_ = writer.Write([]string{"Mode", "Zone Name", "Cluster", "Namespace"})
+	for productName := range distinctProducts {
+		joinedClusters, joinedNamespaces := createClusterNSString(distinctProducts, productName)
+		if _, exists := zones.Zones[productName]; !exists {
+			_ = writer.Write([]string{"Create", productName, joinedClusters, joinedNamespaces})
+		} else {
+			_ = writer.Write([]string{"Update", productName, joinedClusters, joinedNamespaces})
+		}
+	}
+	writer.Flush()
+
+	//Process Dry run input
+	processDryRun()
 
 	//Iterate through zones, if it does not already exist, we will create a blank one (update later all at once)
 	for productName := range distinctProducts {
