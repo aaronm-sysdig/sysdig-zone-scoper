@@ -16,6 +16,8 @@ Environment Variables
 | SYSDIG_API_ENDPOINT | `https://app.au1.sysdig.com`           |
 | STATIC_ZONES        | zone to keep,my zone,another zone      |
 
+### Commandline Paramter
+`--silent` Runs without the dry-run confirmation
 
 ```
 GROUPING_LABEL=xxx> SECURE_API_TOKEN=xxx SYSDIG_API_ENDPOINT=xxx STATIC_ZONES="zone to keep,my zone, another zone" go run sysdig-zone-scoper.go
