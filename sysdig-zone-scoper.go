@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/config"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/dataManipulation"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/mdsNamespaces"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/sysdighttp"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/teamPayload"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/teamZoneMapping"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/zonePayload"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -123,7 +126,7 @@ func updateZone(appConfig *config.Configuration,
 	configUpdate := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
 	configUpdate.JSON = updateZone
 	logger.Debugf("Updating zone '%s', zoneID %d", productName, createdZone.ID)
-	logger.Debugf(" Cluster: '%s', Namespace: '%s'", updateZone.Scopes[len(updateZone.Scopes)-2].Rules, updateZone.Scopes[len(updateZone.Scopes)-1].Rules)
+	logger.Debugf("Cluster: '%s', Namespace: '%s'", updateZone.Scopes[len(updateZone.Scopes)-2].Rules, updateZone.Scopes[len(updateZone.Scopes)-1].Rules)
 	if err = zones.UpdateZone(logger, &configUpdate, updateZone); err != nil {
 		logger.Errorf("Could not update zoneId '%d' for '%s'", createdZone.ID, productName)
 	}
@@ -171,6 +174,66 @@ func processDryRun() {
 	}
 }
 
+func getTeamZoneMapping(logger *logrus.Logger, appConfig *config.Configuration) (error, *teamZoneMapping.TeamZones) {
+	teamZoneMappingFile, err := os.Open(appConfig.TeamZoneMappingFile)
+	if err != nil {
+		logger.Errorf("Error opening team zone mapping file: %v", err)
+		return err, nil // Return nil to indicate an error occurred
+	}
+	defer func(teamZoneMappingFile *os.File) {
+		_ = teamZoneMappingFile.Close()
+	}(teamZoneMappingFile)
+
+	teamZones := teamZoneMapping.NewTeamZones() // Initialize the TeamZones structure
+	if err := teamZones.ParseCSV(teamZoneMappingFile); err != nil {
+		logger.Errorf("Error parsing team zone mapping CSV: %v", err)
+		return err, nil // Return nil to indicate an error occurred
+	}
+
+	// Print the map to verify the contents
+	for team, zones := range *teamZones {
+		formattedZones := fmt.Sprintf("[\"%s\"]", strings.Join(zones, "\", \""))
+		logger.Infof("Team: %s, Zones: %v", team, formattedZones)
+	}
+	return nil, teamZones
+}
+
+func createTeam(logger *logrus.Logger,
+	appConfig *config.Configuration,
+	teamName string,
+	zoneIds []int64) (err error) {
+
+	tb := &teamPayload.TeamBase{}
+	//tz := new(*teamPayload.TeamPayload)
+	tz := &teamPayload.CreateTeamPayload{}
+
+	configCreateTeam := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+	configGetTeamByName := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+	if err = tb.GetTeamByName(logger, &configGetTeamByName, appConfig.TeamTemplateName); err != nil {
+		return err
+	}
+
+	if len(tb.Data) > 0 {
+		if err = tz.CreateTeamZoneMapping(logger, teamName, zoneIds, &configCreateTeam, &tb.Data[0]); err != nil {
+			return err
+		}
+	} else {
+		return errors.New(fmt.Sprintf("Team '%s' could not be found", appConfig.TeamTemplateName))
+	}
+	return nil
+}
+
+func setLogLevel(logger *logrus.Logger, appConfig *config.Configuration) {
+	if strings.ToUpper(appConfig.LogMode) == "INFO" {
+		logger.SetLevel(logrus.InfoLevel)
+	} else if strings.ToUpper(appConfig.LogMode) == "DEBUG" {
+		logger.SetLevel(logrus.DebugLevel)
+	} else if strings.ToUpper(appConfig.LogMode) == "ERROR" {
+		logger.SetLevel(logrus.ErrorLevel)
+	}
+	logger.Infof("Setting LogLevel = '%v'", strings.ToUpper(logger.Level.String()))
+}
+
 func main() {
 	var err error
 	logger := logrus.New()
@@ -184,12 +247,22 @@ func main() {
 
 	logger.Info("Sysdig Zone Scoper v9.5.9\n")
 
-	// we could send a username if we wanted, but no point
 	appConfig := &config.Configuration{}
 	if err := appConfig.Build(logger); err != nil {
 		logger.Fatalf("Could not build configuration. Error %s", err)
 	}
 
+	// Set logging level based off configuration
+	setLogLevel(logger, appConfig)
+	fmt.Println("")
+
+	//Process Team to Zone mapping
+	err, tzMapping := getTeamZoneMapping(logger, appConfig)
+	if tzMapping == nil || err != nil {
+		logger.Fatalf("Failed to load team zone mapping. Error: %v", err)
+	}
+
+	// Build distinct mapping list for cluster and namespaces
 	mdsNs := &mdsNamespaces.NamespacePayload{}
 	logger.Infof("Getting mds Namespace list")
 	if err = getMDSNamespaces(appConfig, logger, mdsNs); err != nil {
@@ -270,5 +343,20 @@ func main() {
 			logger.Infof("Zone '%s' not marked to keep. Deleting...", key)
 		}
 	}
+
+	fmt.Println("")
+	for keyName, keyValue := range *tzMapping {
+		var teamZoneIDs []int64
+		for _, val := range keyValue {
+			if zone, exists := zones.Zones[val]; exists {
+				teamZoneIDs = append(teamZoneIDs, zone.ID)
+			}
+		}
+		logger.Printf("Team: '%s', ZoneIds %v", keyName, teamZoneIDs)
+		if err = createTeam(logger, appConfig, keyName, teamZoneIDs); err != nil {
+			logger.Errorf("Could not create team '%s'. Error: %v", keyName, err)
+		}
+	}
+
 	logger.Print("Finished...")
 }

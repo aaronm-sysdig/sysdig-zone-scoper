@@ -21,7 +21,7 @@ type ZoneData struct {
 type Zone struct {
 	Author         string  `json:"author"`
 	Description    string  `json:"description"`
-	ID             int     `json:"id"`
+	ID             int64   `json:"id"`
 	IsSystem       bool    `json:"isSystem"`
 	LastModifiedBy string  `json:"lastModifiedBy"`
 	LastUpdated    int64   `json:"lastUpdated"`
@@ -37,7 +37,7 @@ type CreateZone struct {
 }
 
 type UpdateZone struct {
-	ID     int     `json:"id"`
+	ID     int64   `json:"id"`
 	Name   string  `json:"name"`
 	Scopes []Scope `json:"scopes"`
 }
