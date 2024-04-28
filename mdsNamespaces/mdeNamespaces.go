@@ -51,7 +51,7 @@ func (p *NamespacePayload) DistinctClusterNamespaceByLabel(logging *logrus.Logge
 
 	for _, entity := range p.Entities {
 		if entity.Labels[groupingLabel] == "" {
-			logging.Debugf("Grouping Label '%s' == '' for namespace '%s'. Skipping...", groupingLabel, entity.Name)
+			//logging.Debugf("Grouping Label '%s' == '' for namespace '%s'. Skipping...", groupingLabel, entity.Name)
 			continue // Skip entities without a product name
 		}
 

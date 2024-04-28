@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"os"
@@ -22,7 +21,7 @@ type Configuration struct {
 	TeamTemplateName    string
 	CreateZones         bool
 	CreateTeams         bool
-	LogMode             string
+	LogLevel            string
 }
 
 func getOSEnvString(logger *logrus.Logger, environmentVariable string, optional bool) string {
@@ -71,11 +70,11 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	var teamTemplateName string
 	var boolCreateTeams bool
 	var boolCreateZones bool
-	var logMode string
+	var LogLevel string
 	pflag.StringVarP(&groupingLabel, "grouping-label", "l", "", "Label to group by")
 	pflag.StringVarP(&teamZoneMappingFile, "team-zone-mapping", "m", "", "CSV file to load for team to zone mapping")
 	pflag.StringVarP(&teamTemplateName, "template-team", "e", "", "Template Team name")
-	pflag.StringVarP(&logMode, "log-mode", "d", "", "Logging mode. INFO, DEBUG or ERROR")
+	pflag.StringVarP(&LogLevel, "log-level", "d", "", "Logging Level. INFO, DEBUG or ERROR")
 
 	pflag.BoolVarP(&boolSilent, "silent", "s", false, "Run Silently without dryrun prompt")
 	pflag.BoolVarP(&boolCreateTeams, "create-teams", "t", false, "Create Teams")
@@ -118,11 +117,11 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 		c.CreateZones = true
 	}
 
-	if logMode == "" {
+	if LogLevel == "" {
 		logger.Info("'log-mode' not  found on the command line.  Checking 'LOG_MODE' environment variable instead")
-		c.LogMode = getOSEnvString(logger, "LOG_MODE", true)
+		c.LogLevel = getOSEnvString(logger, "LOG_LEVEL", true)
 	} else {
-		c.LogMode = "INFO"
+		c.LogLevel = "INFO"
 	}
 
 	// Some logic for what you select
@@ -144,6 +143,6 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	for _, sliceZone := range staticZones {
 		c.StaticZones[sliceZone] = true
 	}
-	fmt.Println("")
+
 	return nil
 }

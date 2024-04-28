@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/config"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/dataManipulation"
@@ -80,6 +79,15 @@ func createZone(appConfig *config.Configuration,
 	return
 }
 
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 func updateZone(appConfig *config.Configuration,
 	logger *logrus.Logger,
 	zones *zonePayload.ZonePayload,
@@ -92,8 +100,15 @@ func updateZone(appConfig *config.Configuration,
 	//Generate the comma lists of clusters and namespaces
 	for _, cn := range distinctProductNames[productName] {
 		logger.Debugf("Cluster: %s, Namespace: %s", cn.Cluster, cn.Namespace)
-		clusters = append(clusters, cn.Cluster)
-		namespaces = append(namespaces, cn.Namespace)
+		// Append cluster if not already in clusters
+		if !contains(clusters, cn.Cluster) {
+			clusters = append(clusters, cn.Cluster)
+		}
+
+		// Append namespace if not already in namespaces
+		if !contains(namespaces, cn.Namespace) {
+			namespaces = append(namespaces, cn.Namespace)
+		}
 	}
 
 	var joinedClusters = fmt.Sprintf("\"%s\"", strings.Join(clusters, "\",\""))
@@ -198,37 +213,42 @@ func getTeamZoneMapping(logger *logrus.Logger, appConfig *config.Configuration) 
 	return nil, teamZones
 }
 
-func createTeam(logger *logrus.Logger,
+func createOrUpdateTeam(logger *logrus.Logger,
 	appConfig *config.Configuration,
 	teamName string,
-	zoneIds []int64) (err error) {
-
-	tb := &teamPayload.TeamBase{}
-	//tz := new(*teamPayload.TeamPayload)
-	tz := &teamPayload.CreateTeamPayload{}
-
+	zoneIds []int64,
+	teamMapping *teamPayload.TeamPayload) (err error) {
+	tz := &teamPayload.TeamPayload{}
 	configCreateTeam := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+
+	// Check if the team already exists, if so we will update (PUT) the team, else we will create (POST) it
+	tb := &teamPayload.TeamBase{}
 	configGetTeamByName := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
-	if err = tb.GetTeamByName(logger, &configGetTeamByName, appConfig.TeamTemplateName); err != nil {
+	if err = tb.GetTeamByName(logger, &configGetTeamByName, teamName); err != nil {
+		logger.Errorf("Could not execute query to ascertain if team '%s' exists. Error %v", teamName, err)
 		return err
 	}
 
 	if len(tb.Data) > 0 {
-		if err = tz.CreateTeamZoneMapping(logger, teamName, zoneIds, &configCreateTeam, &tb.Data[0]); err != nil {
+		// Means we found the team and we need to run an update not a create
+		if err = tz.UpdateTeamZoneMapping(logger, teamName, zoneIds, &configCreateTeam, &tb.Data[0]); err != nil {
 			return err
 		}
 	} else {
-		return errors.New(fmt.Sprintf("Team '%s' could not be found", appConfig.TeamTemplateName))
+		if err = tz.CreateTeamZoneMapping(logger, teamName, zoneIds, &configCreateTeam, teamMapping); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
 func setLogLevel(logger *logrus.Logger, appConfig *config.Configuration) {
-	if strings.ToUpper(appConfig.LogMode) == "INFO" {
+	if strings.ToUpper(appConfig.LogLevel) == "INFO" {
 		logger.SetLevel(logrus.InfoLevel)
-	} else if strings.ToUpper(appConfig.LogMode) == "DEBUG" {
+	} else if strings.ToUpper(appConfig.LogLevel) == "DEBUG" {
 		logger.SetLevel(logrus.DebugLevel)
-	} else if strings.ToUpper(appConfig.LogMode) == "ERROR" {
+	} else if strings.ToUpper(appConfig.LogLevel) == "ERROR" {
 		logger.SetLevel(logrus.ErrorLevel)
 	}
 	logger.Infof("Setting LogLevel = '%v'", strings.ToUpper(logger.Level.String()))
@@ -254,109 +274,136 @@ func main() {
 
 	// Set logging level based off configuration
 	setLogLevel(logger, appConfig)
+
+	// We need zones for both the teams and zones operations so run this either way
 	fmt.Println("")
-
-	//Process Team to Zone mapping
-	err, tzMapping := getTeamZoneMapping(logger, appConfig)
-	if tzMapping == nil || err != nil {
-		logger.Fatalf("Failed to load team zone mapping. Error: %v", err)
-	}
-
-	// Build distinct mapping list for cluster and namespaces
-	mdsNs := &mdsNamespaces.NamespacePayload{}
-	logger.Infof("Getting mds Namespace list")
-	if err = getMDSNamespaces(appConfig, logger, mdsNs); err != nil {
-		logger.Fatalf("Failed to retrieve mds namespaces. Error %v", err)
-	}
-
 	zones := zonePayload.NewZonePayload()
-	fmt.Println("")
-	logger.Info("Getting list of Zones")
-	if err = getZones(appConfig, logger, zones); err != nil {
-		logger.Fatalf("Failed to retrieve zones. Error %v", err)
-	}
-
-	// Custom data manipulation
-	_ = dataManipulation.Manipulate(logger, mdsNs)
-	distinctProducts := mdsNs.DistinctClusterNamespaceByLabel(logger, appConfig.GroupingLabel)
-
-	// Create a dry run data of sorts to output to CSV to confirm before running
-	file, err := os.Create("dry-run.csv")
-	if err != nil {
-		panic(err)
-	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-	_ = writer.Write([]string{"Mode", "Zone Name", "Cluster", "Namespace"})
-	for productName := range distinctProducts {
-		joinedClusters, joinedNamespaces := createClusterNSString(distinctProducts, productName)
-		if _, exists := zones.Zones[productName]; !exists {
-			_ = writer.Write([]string{"Create", productName, joinedClusters, joinedNamespaces})
-		} else {
-			_ = writer.Write([]string{"Update", productName, joinedClusters, joinedNamespaces})
+	if appConfig.CreateTeams || appConfig.CreateZones {
+		logger.Info("Getting list of Zones")
+		if err = getZones(appConfig, logger, zones); err != nil {
+			logger.Fatalf("Failed to retrieve zones. Error %v", err)
 		}
-	}
-	writer.Flush()
 
-	//Process Dry run input
-	if !appConfig.Silent {
-		processDryRun()
 	}
 
-	//Iterate through zones, if it does not already exist, we will create a blank one (update later all at once)
-	for productName := range distinctProducts {
+	if appConfig.CreateZones {
 		fmt.Println("")
-		if _, exists := zones.Zones[productName]; !exists {
-			var createdZone *zonePayload.Zone
-			logger.Debugf("Zone with product name '%s' does NOT exist, creating zone", productName)
+		logger.Info("Running in 'Create Zone' mode")
+		// Build distinct mapping list for cluster and namespaces
+		mdsNs := &mdsNamespaces.NamespacePayload{}
+		logger.Infof("Getting mds Namespace list")
+		if err = getMDSNamespaces(appConfig, logger, mdsNs); err != nil {
+			logger.Fatalf("Failed to retrieve mds namespaces. Error %v", err)
+		}
 
-			if createdZone, err = createZone(appConfig, logger, zones, productName); err != nil {
-				logger.Fatalf("Failed to create new zone '%s'. Error %v", productName, err)
+		// Custom data manipulation
+		_ = dataManipulation.Manipulate(logger, mdsNs)
+		distinctProducts := mdsNs.DistinctClusterNamespaceByLabel(logger, appConfig.GroupingLabel)
+
+		// Create a dry run data of sorts to output to CSV to confirm before running
+		file, err := os.Create("dry-run.csv")
+		if err != nil {
+			panic(err)
+		}
+		defer func(file *os.File) {
+			_ = file.Close()
+		}(file)
+		writer := csv.NewWriter(file)
+		defer writer.Flush()
+		_ = writer.Write([]string{"Mode", "Zone Name", "Cluster", "Namespace"})
+		for productName := range distinctProducts {
+			joinedClusters, joinedNamespaces := createClusterNSString(distinctProducts, productName)
+			if _, exists := zones.Zones[productName]; !exists {
+				_ = writer.Write([]string{"Create", productName, joinedClusters, joinedNamespaces})
+			} else {
+				_ = writer.Write([]string{"Update", productName, joinedClusters, joinedNamespaces})
 			}
+		}
+		writer.Flush()
 
-			if err = updateZone(appConfig, logger, zones, distinctProducts, productName, createdZone); err != nil {
-				logger.Fatalf("Failed to update zone '%s'. Error %v", productName, err)
+		//Process Dry run input
+		if !appConfig.Silent {
+			processDryRun()
+		}
+
+		//Iterate through zones, if it does not already exist, we will create a blank one (update later all at once)
+		for productName := range distinctProducts {
+			fmt.Println("")
+			if _, exists := zones.Zones[productName]; !exists {
+				var createdZone *zonePayload.Zone
+				logger.Debugf("Zone with product name '%s' does NOT exist, creating zone", productName)
+
+				if createdZone, err = createZone(appConfig, logger, zones, productName); err != nil {
+					logger.Fatalf("Failed to create new zone '%s'. Error %v", productName, err)
+				}
+
+				if err = updateZone(appConfig, logger, zones, distinctProducts, productName, createdZone); err != nil {
+					logger.Fatalf("Failed to update zone '%s'. Error %v", productName, err)
+				}
+			} else {
+				logger.Infof("Zone '%s' EXISTS, will update zone", productName)
+
+				zone := zones.Zones[productName]
+				if err = updateZone(appConfig, logger, zones, distinctProducts, productName, &zone); err != nil {
+					logger.Fatalf("Failed to update zone '%s'. Error %v", productName, err)
+				}
 			}
-		} else {
-			logger.Infof("Zone '%s' EXISTS, will update zone", productName)
+		}
 
-			zone := zones.Zones[productName]
-			if err = updateZone(appConfig, logger, zones, distinctProducts, productName, &zone); err != nil {
-				logger.Fatalf("Failed to update zone '%s'. Error %v", productName, err)
+		fmt.Println("")
+		//Setting static zones to keep
+		for key := range appConfig.StaticZones {
+			zone := zones.Zones[key]
+			zone.Keep = true
+			zones.Zones[key] = zone
+		}
+		//Now we sync/cleanup our zones, deleting any that we have not decided to keep
+		for key, zone := range zones.Zones {
+			if !zone.Keep {
+				logger.Infof("Zone '%s' not marked to keep. Deleting...", key)
 			}
 		}
 	}
 
-	fmt.Println("")
-	//Setting static zones to keep
-	for key := range appConfig.StaticZones {
-		zone := zones.Zones[key]
-		zone.Keep = true
-		zones.Zones[key] = zone
-	}
-	//Now we sync/cleanup our zones, deleting any that we have not decided to keep
-	for key, zone := range zones.Zones {
-		if !zone.Keep {
-			logger.Infof("Zone '%s' not marked to keep. Deleting...", key)
-		}
-	}
+	if appConfig.CreateTeams {
+		logger.Info("Running in 'Create Teams' mode")
 
-	fmt.Println("")
-	for keyName, keyValue := range *tzMapping {
-		var teamZoneIDs []int64
-		for _, val := range keyValue {
-			if zone, exists := zones.Zones[val]; exists {
-				teamZoneIDs = append(teamZoneIDs, zone.ID)
+		// Now lets create some teams
+		fmt.Println("")
+
+		// First get the template team to use and re-use
+		tb := &teamPayload.TeamBase{}
+		configGetTeamByName := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+		if err = tb.GetTeamByName(logger, &configGetTeamByName, appConfig.TeamTemplateName); err != nil {
+			logger.Fatalf("Could not retreive team template to use '%s'. Error %v", appConfig.TeamTemplateName, err)
+		}
+
+		//Process Team to Zone mapping
+		err, tzMapping := getTeamZoneMapping(logger, appConfig)
+		if tzMapping == nil || err != nil {
+			logger.Fatalf("Failed to load team zone mapping. Error: %v", err)
+		}
+
+		// Now create the team(s)
+		fmt.Println("")
+		for keyName, keyValue := range *tzMapping {
+			var teamZoneIDs []int64
+			for _, val := range keyValue {
+				if zone, exists := zones.Zones[val]; exists {
+					teamZoneIDs = append(teamZoneIDs, zone.ID)
+				}
 			}
+			logger.Infof("Team: '%s', ZoneIds %v", keyName, teamZoneIDs)
+			if err = createOrUpdateTeam(logger, appConfig, keyName, teamZoneIDs, &tb.Data[0]); err != nil {
+				logger.Errorf("Could not create or update team '%s'. Error: %v", keyName, err)
+			}
+			fmt.Println("")
 		}
-		logger.Printf("Team: '%s', ZoneIds %v", keyName, teamZoneIDs)
-		if err = createTeam(logger, appConfig, keyName, teamZoneIDs); err != nil {
-			logger.Errorf("Could not create team '%s'. Error: %v", keyName, err)
-		}
+
 	}
 
 	logger.Print("Finished...")
 }
+
+//TODO implement chunking for scoping
+//todo Implement dryrun for team creation

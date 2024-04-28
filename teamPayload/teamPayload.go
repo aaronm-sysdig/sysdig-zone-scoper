@@ -9,10 +9,10 @@ import (
 
 type TeamBase struct {
 	Page interface{}
-	Data []CreateTeamPayload
+	Data []TeamPayload
 }
 
-type CreateTeamPayload struct {
+type TeamPayload struct {
 	AdditionalTeamPermissions AdditionalPermissions `json:"additionalTeamPermissions"`
 	CustomTeamRoleID          *int64                `json:"customTeamRoleId,omitempty"`
 	Description               string                `json:"description"`
@@ -24,6 +24,8 @@ type CreateTeamPayload struct {
 	UiSettings                UISettings            `json:"uiSettings"`
 	ZoneIds                   []int64               `json:"zoneIds"`
 	Product                   string                `json:"product"`
+	ID                        int64                 `json:"id',omitempty"`
+	Version                   int64                 `json:"version,omitempty"`
 }
 
 type AdditionalPermissions struct {
@@ -63,17 +65,17 @@ func (tb *TeamBase) GetTeamByName(logger *logrus.Logger,
 	return nil
 }
 
-func (tz *CreateTeamPayload) CreateTeamZoneMapping(logger *logrus.Logger,
+func (tz *TeamPayload) CreateTeamZoneMapping(logger *logrus.Logger,
 	teamName string,
 	zoneIds []int64,
 	configCreateTeam *sysdighttp.SysdigRequestConfig,
-	templateTeamPayload *CreateTeamPayload) (err error) {
+	templateTeamPayload *TeamPayload) (err error) {
 	var objCreateTeamResponse *http.Response
 
 	templateTeamPayload.ZoneIds = zoneIds
 	templateTeamPayload.Name = teamName
 	templateTeamPayload.Description = fmt.Sprintf("%s \nTeamName: '%s'", templateTeamPayload.Description, teamName)
-	templateTeamPayload.Product = "secure"
+	//templateTeamPayload.Product = "secure"
 
 	configCreateTeam.Path = "/platform/v1/teams"
 	configCreateTeam.JSON = templateTeamPayload
@@ -88,6 +90,34 @@ func (tz *CreateTeamPayload) CreateTeamZoneMapping(logger *logrus.Logger,
 
 	if err = sysdighttp.ResponseBodyToJson(objCreateTeamResponse, &tz); err != nil {
 		logger.Error("Could not unmarshal new team payload")
+		return err
+	}
+	return nil
+}
+
+func (tz *TeamPayload) UpdateTeamZoneMapping(logger *logrus.Logger,
+	teamName string,
+	zoneIds []int64,
+	configUpdateTeam *sysdighttp.SysdigRequestConfig,
+	templateTeamPayload *TeamPayload) (err error) {
+	var objCreateTeamResponse *http.Response
+
+	templateTeamPayload.ZoneIds = zoneIds
+	templateTeamPayload.Name = teamName
+
+	configUpdateTeam.Path = fmt.Sprintf("/platform/v1/teams/%d", templateTeamPayload.ID)
+	configUpdateTeam.JSON = templateTeamPayload
+	configUpdateTeam.Method = "PUT"
+	configUpdateTeam.Headers = map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	if objCreateTeamResponse, err = sysdighttp.SysdigRequest(logger, *configUpdateTeam); err != nil {
+		return err
+	}
+
+	if err = sysdighttp.ResponseBodyToJson(objCreateTeamResponse, &tz); err != nil {
+		logger.Error("Could not unmarshal update team payload")
 		return err
 	}
 	return nil
