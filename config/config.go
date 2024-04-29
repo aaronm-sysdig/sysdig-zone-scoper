@@ -125,6 +125,9 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	// Add in 'Entire Infrastrucutre' and 'Entire Git' as they are immutable
 	c.StaticZones["Entire Infrastructure"] = true
 	c.StaticZones["Entire Git"] = true
-	logger.Debugf("Static zones to keep: %+v", c.StaticZones)
+
+	for sliceZone, _ := range c.StaticZones {
+		logger.Debugf("Static Zone '%s'", sliceZone)
+	}
 	return nil
 }
