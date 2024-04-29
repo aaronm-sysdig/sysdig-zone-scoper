@@ -125,12 +125,9 @@ func updateZone(appConfig *config.Configuration,
 	}
 	// Add in our kubernetes scopes
 	newScope = append(newScope, zonePayload.Scope{
-		Rules:      fmt.Sprintf("clusterId in (%s)", joinedClusters),
-		TargetType: "kubernetes",
-	}, zonePayload.Scope{
-		Rules:      fmt.Sprintf("namespace in (%s)", joinedNamespaces),
-		TargetType: "kubernetes",
-	})
+		Rules:      fmt.Sprintf("clusterId in (%s) and namespace in (%s)", joinedClusters, joinedNamespaces),
+		TargetType: "kubernetes"},
+	)
 
 	//Update Zone
 	var updateZone = &zonePayload.UpdateZone{
@@ -160,8 +157,15 @@ func createClusterNSString(distinctProductNames map[string][]mdsNamespaces.Clust
 	var namespaces []string
 	//Generate the comma lists of clusters and namespaces
 	for _, cn := range distinctProductNames[productName] {
-		clusters = append(clusters, cn.Cluster)
-		namespaces = append(namespaces, cn.Namespace)
+		// Append cluster if not already in clusters
+		if !contains(clusters, cn.Cluster) {
+			clusters = append(clusters, cn.Cluster)
+		}
+
+		// Append namespace if not already in namespaces
+		if !contains(namespaces, cn.Namespace) {
+			namespaces = append(namespaces, cn.Namespace)
+		}
 	}
 	return fmt.Sprintf(strings.Join(clusters, ",")), fmt.Sprintf(strings.Join(namespaces, ","))
 }

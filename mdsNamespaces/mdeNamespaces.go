@@ -74,7 +74,7 @@ func (p *NamespacePayload) DistinctClusterNamespaceByLabel(logging *logrus.Logge
 		}
 		if !found {
 			// Append the cluster-namespace pair to the slice if it's not already present
-			logging.Infof("Adding Cluster '%s', Namespace '%s' to distinct slice", cluster, namespace)
+			logging.Debugf("Adding Cluster '%s', Namespace '%s' to distinct slice", cluster, namespace)
 			result[entity.Labels[groupingLabel]] = append(result[entity.Labels[groupingLabel]], clusterNamespace)
 		}
 	}
