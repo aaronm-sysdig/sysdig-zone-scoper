@@ -278,16 +278,17 @@ func main() {
 	// We need zones for both the teams and zones operations so run this either way
 	fmt.Println("")
 	zones := zonePayload.NewZonePayload()
-	if appConfig.CreateTeams || appConfig.CreateZones {
-		logger.Info("Getting list of Zones")
-		if err = getZones(appConfig, logger, zones); err != nil {
-			logger.Fatalf("Failed to retrieve zones. Error %v", err)
-		}
-
+	logger.Info("Getting list of Zones")
+	if err = getZones(appConfig, logger, zones); err != nil {
+		logger.Fatalf("Failed to retrieve zones. Error %v", err)
 	}
 
-	if appConfig.CreateZones {
+	if strings.Contains(strings.ToUpper(appConfig.Mode), "ZONE") {
 		fmt.Println("")
+		logger.Info("------------------------------")
+		logger.Info("Running in 'Create Zones' mode")
+		logger.Info("------------------------------")
+
 		logger.Info("Running in 'Create Zone' mode")
 		// Build distinct mapping list for cluster and namespaces
 		mdsNs := &mdsNamespaces.NamespacePayload{}
@@ -365,8 +366,11 @@ func main() {
 		}
 	}
 
-	if appConfig.CreateTeams {
+	if strings.Contains(strings.ToUpper(appConfig.Mode), "TEAM") {
+		fmt.Println("")
+		logger.Info("------------------------------")
 		logger.Info("Running in 'Create Teams' mode")
+		logger.Info("------------------------------")
 
 		// Now lets create some teams
 		fmt.Println("")
@@ -407,3 +411,4 @@ func main() {
 
 //TODO implement chunking for scoping
 //todo Implement dryrun for team creation
+//TODO Implement mode va create teams/zones

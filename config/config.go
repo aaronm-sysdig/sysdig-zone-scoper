@@ -4,7 +4,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -19,9 +18,8 @@ type Configuration struct {
 	StaticZones         map[string]bool
 	TeamZoneMappingFile string
 	TeamTemplateName    string
-	CreateZones         bool
-	CreateTeams         bool
 	LogLevel            string
+	Mode                string
 }
 
 func getOSEnvString(logger *logrus.Logger, environmentVariable string, optional bool) string {
@@ -38,7 +36,7 @@ func getOSEnvString(logger *logrus.Logger, environmentVariable string, optional 
 	return env
 }
 
-func getOSEnvBool(logger *logrus.Logger, environmentVariable string, optional bool) bool {
+/*func getOSEnvBool(logger *logrus.Logger, environmentVariable string, optional bool) bool {
 	env := os.Getenv(environmentVariable)
 	if env == "" {
 		if !optional {
@@ -57,7 +55,7 @@ func getOSEnvBool(logger *logrus.Logger, environmentVariable string, optional bo
 
 	logger.Printf("Found %s Variable with value %t, continuing ...", environmentVariable, boolVal)
 	return boolVal
-}
+}*/
 
 func (c *Configuration) Build(logger *logrus.Logger) error {
 	c.SecureApiToken = getOSEnvString(logger, "SECURE_API_TOKEN", false)
@@ -68,17 +66,15 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	var boolSilent bool
 	var teamZoneMappingFile string
 	var teamTemplateName string
-	var boolCreateTeams bool
-	var boolCreateZones bool
 	var LogLevel string
+	var mode string
 	pflag.StringVarP(&groupingLabel, "grouping-label", "l", "", "Label to group by")
 	pflag.StringVarP(&teamZoneMappingFile, "team-zone-mapping", "m", "", "CSV file to load for team to zone mapping")
 	pflag.StringVarP(&teamTemplateName, "template-team", "e", "", "Template Team name")
 	pflag.StringVarP(&LogLevel, "log-level", "d", "", "Logging Level. INFO, DEBUG or ERROR")
+	pflag.StringVarP(&mode, "mode", "o", "", "Operation mode.  ZONE or TEAM")
 
 	pflag.BoolVarP(&boolSilent, "silent", "s", false, "Run Silently without dryrun prompt")
-	pflag.BoolVarP(&boolCreateTeams, "create-teams", "t", false, "Create Teams")
-	pflag.BoolVarP(&boolCreateZones, "create-zones", "z", false, "Create Zones")
 
 	pflag.Parse()
 
@@ -103,18 +99,11 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 		c.TeamTemplateName = teamTemplateName
 	}
 
-	if !boolCreateTeams {
-		logger.Info("'create-teams' not  found on the command line.  Checking 'CREATE_TEAMS' environment variable instead")
-		c.CreateTeams = getOSEnvBool(logger, "CREATE_TEAMS", true)
+	if mode == "" {
+		logger.Info("'mode' not found on the command line.  Checking 'MODE' environment variable instead")
+		c.Mode = getOSEnvString(logger, "MODE", false)
 	} else {
-		c.CreateTeams = true
-	}
-
-	if !boolCreateZones {
-		logger.Info("'create-zones' not  found on the command line.  Checking 'CREATE_ZONES' environment variable instead")
-		c.CreateZones = getOSEnvBool(logger, "CREATE_ZONES", true)
-	} else {
-		c.CreateZones = true
+		c.Mode = mode
 	}
 
 	if LogLevel == "" {
@@ -124,16 +113,6 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 		c.LogLevel = "INFO"
 	}
 
-	// Some logic for what you select
-
-	if c.CreateZones && c.CreateTeams {
-		logger.Fatal("Sorry, you cannot run Create Zones and Create teams in one execution. Exiting...")
-	}
-
-	if !c.CreateZones && !c.CreateTeams {
-		logger.Fatal("You have not specified either to Create teams or zones, so I will just exit.  Goodbye. Exiting...")
-	}
-
 	c.Silent = boolSilent
 
 	//Get our static list of zones to keep even if we did not create or update them
@@ -141,8 +120,11 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	staticZones := strings.Split(envStaticZones, ",")
 	c.StaticZones = make(map[string]bool)
 	for _, sliceZone := range staticZones {
-		c.StaticZones[sliceZone] = true
+		c.StaticZones[strings.TrimSpace(sliceZone)] = true
 	}
+	// Add in 'Entire Infrastrucutre' and 'Entire Git' as they are immutable
+	c.StaticZones["Entire Infrastructure"] = true
+	c.StaticZones["Entire Git"] = true
 
 	return nil
 }
