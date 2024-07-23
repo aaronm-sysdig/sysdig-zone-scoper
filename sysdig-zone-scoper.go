@@ -27,14 +27,28 @@ func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	// Simplify and format the function name and line number directly after the function name
 	functionName := runtime.FuncForPC(entry.Caller.PC).Name()
 	lastSlash := strings.LastIndex(functionName, "/")
-	shortFunctionName := functionName[lastSlash+1:] // Default to full string post-last slash if no parenthesis found
+	shortFunctionName := functionName
 
-	// Try to find the parenthesis and refine shortFunctionName
 	if lastSlash != -1 {
-		firstParen := strings.Index(functionName[lastSlash:], "(") + lastSlash
-		if firstParen > lastSlash {
-			shortFunctionName = functionName[lastSlash+1 : firstParen]
+		// Extract the part after the last slash
+		afterSlash := functionName[lastSlash+1:]
+
+		// Check if the extracted part contains parentheses (indicating a method)
+		firstParen := strings.Index(afterSlash, "(")
+		if firstParen != -1 {
+			// Extract the struct and method name
+			structAndMethodName := afterSlash[:firstParen]
+			parts := strings.Split(structAndMethodName, ".")
+			if len(parts) >= 2 {
+				// Combine the first part (struct) and the last part (method)
+				shortFunctionName = parts[0] + "." + parts[len(parts)-1]
+			} else {
+				shortFunctionName = structAndMethodName
+			}
+		} else {
+			shortFunctionName = afterSlash
 		}
+		shortFunctionName = afterSlash
 	}
 
 	formattedCaller := fmt.Sprintf("%s:%d", shortFunctionName, entry.Caller.Line) // Combine function name and line
@@ -239,9 +253,44 @@ func createOrUpdateTeam(logger *logrus.Logger,
 			return err
 		}
 	} else {
-		if err = tz.CreateTeamZoneMapping(logger, teamName, zoneIds, &configCreateTeam, teamMapping); err != nil {
+		if err = tz.CreateTeamZoneMapping(logger, appConfig, teamName, zoneIds, &configCreateTeam, teamMapping); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func cRUDTeamMonitor(logger *logrus.Logger,
+	appConfig *config.Configuration,
+	teamName string,
+	keyName string,
+	teamMapping *teamPayload.TeamPayload) (err error) {
+	tz := &teamPayload.TeamPayload{}
+	configCreateTeam := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+
+	// Check if the team already exists, if so we will update (PUT) the team, else we will create (POST) it
+	tb := &teamPayload.TeamBase{}
+	configGetTeamByName := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+	if err = tb.GetTeamByName(logger, &configGetTeamByName, teamName); err != nil {
+		logger.Errorf("Could not execute query to ascertain if team '%s' exists. Error %v", teamName, err)
+		return err
+	}
+
+	if len(tb.Data) == 0 {
+		teamMapping.Scopes = append(tz.Scopes, teamPayload.Scope{
+			Expression: "container",
+			Type:       "HOST_CONTAINER",
+		}, teamPayload.Scope{
+			Expression: fmt.Sprintf("%s = \"%s\"", appConfig.GroupingLabel, keyName),
+			Type:       "AGENT",
+		})
+		logger.Infof("Creating team: %s", teamName)
+		if err = tz.CreateTeamZoneMapping(logger, appConfig, teamName, nil, &configCreateTeam, teamMapping); err != nil {
+			return err
+		}
+	} else {
+		logger.Infof("Skipping existing team: %s", teamName)
 	}
 
 	return nil
@@ -410,9 +459,45 @@ func main() {
 
 	}
 
+	if strings.Contains(strings.ToUpper(appConfig.Mode), "MONITOR") {
+
+		fmt.Println("")
+		logger.Info("--------------------------------------")
+		logger.Info("Running in 'Create Monitor Teams' mode")
+		logger.Info("--------------------------------------")
+
+		// Now lets create some teams
+		fmt.Println("")
+
+		// Build distinct mapping list for cluster and namespaces
+		mdsNs := &mdsNamespaces.NamespacePayload{}
+		logger.Infof("Getting mds Namespace list")
+		if err = getMDSNamespaces(appConfig, logger, mdsNs); err != nil {
+			logger.Fatalf("Failed to retrieve mds namespaces. Error %v", err)
+		}
+
+		// Custom data manipulation
+		_ = dataManipulation.Manipulate(logger, mdsNs)
+		distinctProducts := mdsNs.DistinctClusterNamespaceByLabel(logger, appConfig.GroupingLabel)
+
+		// First get the template team to use and re-use
+		tb := &teamPayload.TeamBase{}
+		configGetTeamByName := sysdighttp.DefaultSysdigRequestConfig(appConfig.SysdigApiEndpoint, appConfig.SecureApiToken)
+		if err = tb.GetTeamByName(logger, &configGetTeamByName, appConfig.TeamTemplateName); err != nil {
+			logger.Fatalf("Could not retreive team template to use '%s'. Error %v", appConfig.TeamTemplateName, err)
+		}
+
+		for keyName := range distinctProducts {
+			teamName := fmt.Sprintf("%s%s", appConfig.TeamPrefix, keyName)
+			logger.Infof("Team: '%s'", teamName)
+			if err = cRUDTeamMonitor(logger, appConfig, teamName, keyName, &tb.Data[0]); err != nil {
+				logger.Errorf("Could not create or update team '%s'. Error: %v", keyName, err)
+			}
+		}
+	}
 	logger.Print("Finished...")
 }
 
-//TODO implement chunking for scoping
-//todo Implement dryrun for team creation
+//TODO Implement chunking for scoping
+//TODO Implement dryrun for team creation
 //TODO Implement mode va create teams/zones

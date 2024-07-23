@@ -2,6 +2,7 @@ package teamPayload
 
 import (
 	"fmt"
+	"github.com/aaronm-sysdig/sysdig-zone-scoper/config"
 	"github.com/aaronm-sysdig/sysdig-zone-scoper/sysdighttp"
 	"github.com/sirupsen/logrus"
 	"net/http"
@@ -66,6 +67,7 @@ func (tb *TeamBase) GetTeamByName(logger *logrus.Logger,
 }
 
 func (tz *TeamPayload) CreateTeamZoneMapping(logger *logrus.Logger,
+	appConfig *config.Configuration,
 	teamName string,
 	zoneIds []int64,
 	configCreateTeam *sysdighttp.SysdigRequestConfig,
@@ -74,8 +76,7 @@ func (tz *TeamPayload) CreateTeamZoneMapping(logger *logrus.Logger,
 
 	templateTeamPayload.ZoneIds = zoneIds
 	templateTeamPayload.Name = teamName
-	templateTeamPayload.Description = fmt.Sprintf("%s \nTeamName: '%s'", templateTeamPayload.Description, teamName)
-	//templateTeamPayload.Product = "secure"
+	templateTeamPayload.Description = teamName
 
 	configCreateTeam.Path = "/platform/v1/teams"
 	configCreateTeam.JSON = templateTeamPayload

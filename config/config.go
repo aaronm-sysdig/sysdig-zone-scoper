@@ -20,6 +20,7 @@ type Configuration struct {
 	TeamTemplateName    string
 	LogLevel            string
 	Mode                string
+	TeamPrefix          string
 }
 
 func getOSEnvString(logger *logrus.Logger, environmentVariable string, optional bool) string {
@@ -68,11 +69,14 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	var teamTemplateName string
 	var LogLevel string
 	var mode string
+	var teamPrefix string
+
 	pflag.StringVarP(&groupingLabel, "grouping-label", "l", "", "Label to group by")
 	pflag.StringVarP(&teamZoneMappingFile, "team-zone-mapping", "m", "", "CSV file to load for team to zone mapping")
 	pflag.StringVarP(&teamTemplateName, "template-team", "e", "", "Template Team name")
 	pflag.StringVarP(&LogLevel, "log-level", "d", "", "Logging Level. INFO, DEBUG or ERROR")
 	pflag.StringVarP(&mode, "mode", "o", "", "Operation mode.  ZONE or TEAM")
+	pflag.StringVarP(&teamPrefix, "team-prefix", "t", "", "Team Name Prefix")
 
 	pflag.BoolVarP(&boolSilent, "silent", "s", false, "Run Silently without dryrun prompt")
 
@@ -113,14 +117,23 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 		c.LogLevel = "INFO"
 	}
 
+	if teamPrefix == "" {
+		logger.Info("'team-prefix' not  found on the command line.  Checking 'TEAM_PREFIX' environment variable instead")
+		c.TeamPrefix = getOSEnvString(logger, "TEAM_PREFIX", true)
+	} else {
+		c.TeamPrefix = teamPrefix
+	}
+
 	c.Silent = boolSilent
 
 	//Get our static list of zones to keep even if we did not create or update them
 	envStaticZones := getOSEnvString(logger, "STATIC_ZONES", true)
-	staticZones := strings.Split(envStaticZones, ",")
 	c.StaticZones = make(map[string]bool)
-	for _, sliceZone := range staticZones {
-		c.StaticZones[strings.TrimSpace(sliceZone)] = true
+	if len(envStaticZones) > 0 {
+		staticZones := strings.Split(envStaticZones, ",")
+		for _, sliceZone := range staticZones {
+			c.StaticZones[strings.TrimSpace(sliceZone)] = true
+		}
 	}
 	// Add in 'Entire Infrastrucutre' and 'Entire Git' as they are immutable
 	c.StaticZones["Entire Infrastructure"] = true
