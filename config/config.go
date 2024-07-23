@@ -83,7 +83,7 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	pflag.Parse()
 
 	if groupingLabel == "" {
-		logger.Info("'grouping-label' not  found on the command line.  Checking 'GROUPING-LABEL' environment variable instead")
+		logger.Info("'grouping-label' not  found on the command line.  Checking 'GROUPING_LABEL' environment variable instead")
 		c.GroupingLabel = getOSEnvString(logger, "GROUPING_LABEL", false)
 	} else {
 		c.GroupingLabel = groupingLabel
@@ -139,7 +139,7 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	c.StaticZones["Entire Infrastructure"] = true
 	c.StaticZones["Entire Git"] = true
 
-	for sliceZone, _ := range c.StaticZones {
+	for sliceZone := range c.StaticZones {
 		logger.Debugf("Static Zone '%s'", sliceZone)
 	}
 	return nil
