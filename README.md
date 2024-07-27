@@ -32,6 +32,7 @@ Environment Variables
 `--team-template-name/-e` Sets the team template name to use to use as a template for team creation (permissions etc) <br>
 `--mode/-o` Sets execution mode
 `--team-prefix/-t` Sets team name prefix (if any)
+`--dryrun/-r` Runs in dry-run mode.  Will pretend to create but will not (enabled for Monitor mode only at the moment)
 
 ### `TEAM_ZONE_MAPPING` example
 Once your zones are created, the next thing to do is create teams that use these zones.  the `TEAM_ZONE_MAPPING` configuration

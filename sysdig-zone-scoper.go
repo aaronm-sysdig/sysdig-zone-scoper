@@ -286,8 +286,10 @@ func cRUDTeamMonitor(logger *logrus.Logger,
 			Type:       "AGENT",
 		})
 		logger.Infof("Creating team: %s", teamName)
-		if err = tz.CreateTeamZoneMapping(logger, appConfig, teamName, nil, &configCreateTeam, teamMapping); err != nil {
-			return err
+		if !appConfig.DryRun {
+			if err = tz.CreateTeamZoneMapping(logger, appConfig, teamName, nil, &configCreateTeam, teamMapping); err != nil {
+				return err
+			}
 		}
 	} else {
 		logger.Infof("Skipping existing team: %s", teamName)
@@ -376,8 +378,13 @@ func main() {
 		writer.Flush()
 
 		//Process Dry run input
-		if !appConfig.Silent {
-			processDryRun()
+		if appConfig.DryRun {
+			fmt.Println("\"dry-run.csv\" has been written, exiting")
+			os.Exit(0)
+		} else {
+			if !appConfig.Silent {
+				processDryRun()
+			}
 		}
 
 		//Iterate through zones, if it does not already exist, we will create a blank one (update later all at once)

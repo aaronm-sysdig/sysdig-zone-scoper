@@ -21,6 +21,7 @@ type Configuration struct {
 	LogLevel            string
 	Mode                string
 	TeamPrefix          string
+	DryRun              bool
 }
 
 func getOSEnvString(logger *logrus.Logger, environmentVariable string, optional bool) string {
@@ -65,6 +66,7 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	// Setup Label to group from
 	var groupingLabel string
 	var boolSilent bool
+	var boolDryRun bool
 	var teamZoneMappingFile string
 	var teamTemplateName string
 	var LogLevel string
@@ -79,6 +81,7 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	pflag.StringVarP(&teamPrefix, "team-prefix", "t", "", "Team Name Prefix")
 
 	pflag.BoolVarP(&boolSilent, "silent", "s", false, "Run Silently without dryrun prompt")
+	pflag.BoolVarP(&boolDryRun, "dryrun", "r", false, "DryRun mode.  Will not actually do anything irrespective of even --silent/-s ")
 
 	pflag.Parse()
 
@@ -125,6 +128,10 @@ func (c *Configuration) Build(logger *logrus.Logger) error {
 	}
 
 	c.Silent = boolSilent
+	c.DryRun = boolDryRun
+	if c.DryRun {
+		logger.Infof("Dryrun mode enabled")
+	}
 
 	//Get our static list of zones to keep even if we did not create or update them
 	envStaticZones := getOSEnvString(logger, "STATIC_ZONES", true)
